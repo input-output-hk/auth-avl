@@ -1,5 +1,9 @@
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Crypto.AuthDS.Tree
     ( Tree
+    , Keyable(..)
+    , Valueable(..)
     -- * Create
     , empty
     -- * Manipulate
@@ -14,6 +18,16 @@ module Crypto.AuthDS.Tree
     , debugPretty
     ) where
 
+import Crypto.AuthDS.Proof
+import Crypto.AuthDS.Types
+import Crypto.Hash
+import Data.Proxy
+import Data.ByteArray (ByteArrayAccess)
+import qualified Data.ByteString as B
+
+newtype Height = Height Int
+    deriving (Show,Eq)
+
 data Tree key value =
       Node key (Tree key value) (Tree key value)
     | Leaf !(Leaf key value)
@@ -24,36 +38,49 @@ data Leaf key value =
     | LeafSentinel      -- minus infinity key. sentinel node
     deriving (Show,Eq)
 
---    The proof that a given key is in the data structure and has a given
---    value consists of the labels of siblings of nodes on the path from the root to the leaf, together
---    with information on whether the path goes left or right at each step.
-newtype Proof label = Proof [(Direction, label)]
-
-data Direction = GoLeft | GoRight
-    deriving (Show,Eq)
-
-data Balance = NeedLeftBalance | LeftHeavy | Balanced | RightHeavy | NeedRightBalance
-    deriving (Show,Eq)
+class (Ord key, ByteArrayAccess key) => Keyable key where
+    keyNegativeInfinity :: proxy key -> key
+    keyPositiveInfinity :: proxy key -> key
+class ByteArrayAccess value => Valueable value where
+    valueNegativeInfinity :: proxy value -> value
 
 -- | return the height of a tree
 height :: Tree key value -> Int
 height (Node _ left right) = 1 + max (height left) (height right)
 height (Leaf _)            = 0
 
--- | Return the balance property of a node
+balanceInvalid n left right =
+    error ("internal error: AVL assumption invalid -- balance is " ++ show n
+          ++ " (height(left)=" ++ show (height left)
+          ++ " height(right)=" ++ show (height right)
+          ++ ")")
+
+-- | Return the balance property of a node.
 --
 -- AVL property is that balance should be one of [-1 (left heavy),0,+1 (right heavy)]
-balance :: (Show key, Show value) => Tree key value -> Balance
-balance (Leaf _)              = Balanced
+--
+-- This assume the node doesn't break the AVL assumption
+balance :: Tree key value -> Balanced
+balance (Leaf _)                 = Centered
 balance node@(Node _ left right) =
     case (- (height left)) + height right of
-        -2 -> NeedLeftBalance
         -1 -> LeftHeavy
-        0  -> Balanced
+        0  -> Centered
         1  -> RightHeavy
-        2  -> NeedRightBalance
-        n  -> error ("balance is " ++ show n ++ " left=" ++ show (height left) ++ " right=" ++ show (height right) ++ " balance=" ++ show (balanceN node) ++ "\n" ++ showPretty node)
+        n  -> balanceInvalid n left right
 
+balanceAfterOp :: Tree key value -> Balance
+balanceAfterOp (Leaf _)                 = Balanced Centered
+balanceAfterOp node@(Node _ left right) =
+    case (- (height left)) + height right of
+        -2 -> Unbalanced NeedLeftBalance
+        -1 -> Balanced LeftHeavy
+        0  -> Balanced Centered
+        1  -> Balanced RightHeavy
+        2  -> Unbalanced NeedRightBalance
+        n  -> balanceInvalid n left right
+
+balanceN :: Tree key value -> Int
 balanceN (Leaf _)            = 0
 balanceN (Node _ left right) = (- (height left)) + height right
 
@@ -64,7 +91,10 @@ assert opName prev n
 
 -- | Check if a tree is balanced
 isBalanced :: (Show key, Show value) => Tree key value -> Bool
-isBalanced n = balance n `elem` [LeftHeavy,Balanced,RightHeavy]
+isBalanced n =
+    case balanceAfterOp n of
+        Balanced   _ -> True
+        Unbalanced _ -> False
 
 check :: (Show key, Show value, Ord key) => Tree key value -> [String]
 check n@(Node k left right) = go [] [] n
@@ -75,17 +105,52 @@ check n@(Node k left right) = go [] [] n
     go _ _ (Leaf (LeafVal lk _)) = []
     go _ _ (Leaf _ )             = []
 
+labelTree :: forall key value . (Keyable key, Valueable value) => Tree key value -> Label
+labelTree n@(Node _ left right) =
+    let balanceToW8 (-1) = 255
+        balanceToW8 0    = 0
+        balanceToW8 1    = 1
+     in hashFinalize $ flip hashUpdates     [labelTree left, labelTree right]
+                     $ hashUpdates hashInit [B.singleton 1, B.singleton (balanceToW8 $ balanceN n)]
+labelTree leaf@(Leaf LeafSentinel) =
+    -- TODO
+    -- scrypto has the key length filled with 0 and the value length filled
+    -- with 0 for the negative infinity sentinel, however this force to have a
+    -- constant key & value length. see if we could alleviate this requirement.
+    -- For now we hash an impossible prefix as an alternative
+    hashFinalize $ flip hashUpdate (leafNextKey leaf)
+                 $ flip hashUpdate (valueNegativeInfinity (Proxy :: Proxy value))
+                 $ flip hashUpdate (keyNegativeInfinity (Proxy :: Proxy key))
+                 $ flip hashUpdate (B.singleton 0)
+                 $ hashInit
+labelTree leaf@(Leaf (LeafVal key value)) =
+    hashFinalize $ flip hashUpdate (leafNextKey leaf)
+                 $ flip hashUpdate value
+                 $ flip hashUpdate key
+                 $ flip hashUpdate (B.singleton 0)
+                 $ hashInit
+
+-- | Return the next key associated with a leaf
+--
+-- TODO: this is not the leaf next key
+leafNextKey :: forall key val . Keyable key => Tree key val -> key
+leafNextKey (Leaf (LeafVal key value)) = key
+leafNextKey (Leaf LeafSentinel)        = keyNegativeInfinity (Proxy :: Proxy key)
+leafNextKey (Node {}) = error "cannot call on node"
+
 compareLeaf :: Ord key => Leaf key value -> Leaf key value -> Ordering
 compareLeaf LeafSentinel   LeafSentinel   = EQ
 compareLeaf LeafSentinel   _              = LT
 compareLeaf _              LeafSentinel   = GT
 compareLeaf (LeafVal k1 _) (LeafVal k2 _) = k1 `compare` k2
 
-fromList :: (Ord key, Show key, Show value)
+fromList :: (Show key, Show value, Keyable key, Valueable value)
          => [(key, value)]
          -> Tree key value
 fromList kvs =
-    foldr (uncurry insert) empty kvs
+    foldr (uncurry insertNoProof) empty kvs
+  where
+    insertNoProof a b c = fst $ insert a b c
 
 empty :: Tree key value
 empty = Leaf LeafSentinel
@@ -167,58 +232,67 @@ insert k v = alter (const $ Just v) k
 delete k = alter (const Nothing) k
 update updater k = alter (maybe Nothing updater) k
 
-alter :: (Ord key, Show key, Show val)
+alter :: (Ord key, Show key, Show val, Keyable key, Valueable val)
       => (Maybe val -> Maybe val) -- the update function
       -> key                      -- the key to alter
       -> Tree key val             -- the old tree
-      -> Tree key val             -- the new tree
+      -> (Tree key val, ModifyProof key val) -- the new tree
 alter updatef k tree =
     case go tree of
-        Nothing          -> tree
-        Just (newTree,_) -> newTree
+        Nothing          -> (tree, undefined)
+        Just (newTree,_,p) -> (newTree, ModifyProof k p)
   where
+    --go :: forall key val . Tree key val -> Maybe (Tree key val, NodeDiff)
     -- didn't find the key and reached the sentinel
     go leafSentinel@(Leaf LeafSentinel) =
         case updatef Nothing of
             Nothing -> Nothing
-            Just v  -> Just (Node k leafSentinel (Leaf $ LeafVal k v), Inserted)
+            Just v  ->
+                let proof = ProofLeaf (LeafNotFound $ keyNegativeInfinity (Proxy :: Proxy key)) (leafNextKey leafSentinel) v
+                 in Just (Node k leafSentinel (Leaf $ LeafVal k v), Inserted, proof)
     -- find a leaf
-    go (Leaf leafVal@(LeafVal lk lv)) =
+    go leaf@(Leaf leafVal@(LeafVal lk lv)) =
         case compare k lk of
             EQ -> case updatef (Just lv) of
                         Nothing     -> error "delete not supported"
-                        Just newVal -> Just (Leaf $ LeafVal k newVal, Updated)
+                        Just newVal ->
+                            let proof = ProofLeaf LeafFound (leafNextKey leaf) newVal
+                             in Just (Leaf $ LeafVal k newVal, Updated, proof)
             LT -> error "lt impossible"
             GT -> case updatef Nothing of
                         Nothing     -> Nothing
-                        Just newVal -> Just (Node k (Leaf leafVal) (Leaf $ LeafVal k newVal), Inserted)
+                        Just newVal ->
+                            let proof = ProofLeaf (LeafNotFound lk) (leafNextKey leaf) newVal
+                             in Just (Node k (Leaf leafVal) (Leaf $ LeafVal k newVal), Inserted, proof)
 
-    go (Node key left right)
+    go n@(Node key left right)
         | ceq == LT =
             case go left of
-                Nothing        -> Nothing
-                Just (nLeft,s) -> Just (rebalance (Node key nLeft right), s)
+                Nothing          -> Nothing
+                Just (nLeft,s,p) ->
+                    let proof = ProofGoLeft (labelTree n) (balance n) p
+                     in Just (rebalance (Node key nLeft right), s, proof)
         -- go right
         | otherwise =
             case go right of
-                Nothing         -> Nothing
-                Just (nRight,s) -> Just (rebalance (Node key left nRight), s)
+                Nothing           -> Nothing
+                Just (nRight,s,p) ->
+                    let proof = ProofGoRight (labelTree n) (balance n) p
+                     in Just (rebalance (Node key left nRight), s, proof)
       where
         ceq = compare k key
 
 -- | Potentially rebalance a tree to keep the AVL properties
 rebalance :: (Show key, Show val) => Tree key val -> Tree key val
 rebalance n@(Node _ left right) =
-    case balance n of
-        NeedLeftBalance  -> case balance left of
-                                RightHeavy -> rotLR n
-                                _          -> rotR n
-        NeedRightBalance -> case balance right of
-                                LeftHeavy -> rotRL n
-                                _         -> rotL n
-        LeftHeavy        -> assert "rebalance-left-heavy" n $ n
-        Balanced         -> assert "rebalance-balanced" n $ n
-        RightHeavy       -> assert "rebalance-right-heavy" n $ n
+    case balanceAfterOp n of
+        Unbalanced NeedLeftBalance  -> case balance left of
+                                            RightHeavy -> rotLR n
+                                            _          -> rotR n
+        Unbalanced NeedRightBalance -> case balance right of
+                                            LeftHeavy -> rotRL n
+                                            _         -> rotL n
+        Balanced lvl -> assert ("rebalance-" ++ show lvl) n $ n
 
 -- Simple Left rotation
 --

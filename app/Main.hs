@@ -1,6 +1,8 @@
 module Main where
 
 import Crypto.AuthDS.Tree
+import           Data.ByteArray (ByteArrayAccess(..))
+import qualified Data.ByteString as B
 
 debug t = do
     putStrLn (replicate 80 '=')
@@ -8,18 +10,30 @@ debug t = do
     debugPretty t
     putStrLn ("problems: " ++ show s)
 
+instance ByteArrayAccess Int where
+    length _ = 8
+    withByteArray i f = undefined
+
+instance Valueable Int where
+    valueNegativeInfinity _ = minBound
+
+instance Keyable Int where
+    keyNegativeInfinity _ = 0
+    keyPositiveInfinity _ = maxBound
+    
+
 main :: IO ()
 main = do
-    let t = empty
+    let t = empty :: Tree Int Int
 
-    let t1 = insert 10 10 t
-        t2 = insert 20 20 t1
-        t3 = insert 30 30 t2
-        t4 = insert 25 25 t3
-        t5 = insert 24 24 t4
-        t6 = insert 27 27 t5
-        t7 = insert 28 28 t6
-        t8 = insert 29 29 t7
+    let (t1,_) = insert 10 10 t
+        (t2,_) = insert 20 20 t1
+        (t3,_) = insert 30 30 t2
+        (t4,_) = insert 25 25 t3
+        (t5,_) = insert 24 24 t4
+        (t6,_) = insert 27 27 t5
+        (t7,_) = insert 28 28 t6
+        (t8,_) = insert 29 29 t7
 
     debug t1
     debug t2

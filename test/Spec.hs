@@ -4,10 +4,25 @@ import Data.List
 import Data.Function
 import Control.Monad
 
+import           Data.ByteArray (ByteArrayAccess(..))
+import qualified Data.ByteString as B
+
 import Crypto.AuthDS.Tree
 
 data TreeKvs = TreeKvs [(Int, Int)]
     deriving (Show,Eq)
+
+instance ByteArrayAccess Int where
+    length _ = 8
+    withByteArray i f = undefined
+
+instance Valueable Int where
+    valueNegativeInfinity _ = minBound
+
+instance Keyable Int where
+    keyNegativeInfinity _ = 0
+    keyPositiveInfinity _ = maxBound
+    
 
 instance Arbitrary TreeKvs where
     arbitrary = do
