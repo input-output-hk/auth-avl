@@ -30,7 +30,7 @@ newtype Height = Height Int
 
 data Tree key value =
       Node key (Tree key value) (Tree key value)
-    | Leaf !(Leaf key value)
+    | Leaf !(Leaf key value) key
     deriving (Show,Eq)
 
 data Leaf key value =
@@ -47,7 +47,7 @@ class ByteArrayAccess value => Valueable value where
 -- | return the height of a tree
 height :: Tree key value -> Int
 height (Node _ left right) = 1 + max (height left) (height right)
-height (Leaf _)            = 0
+height (Leaf _ _)          = 0
 
 balanceInvalid n left right =
     error ("internal error: AVL assumption invalid -- balance is " ++ show n
@@ -61,7 +61,7 @@ balanceInvalid n left right =
 --
 -- This assume the node doesn't break the AVL assumption
 balance :: Tree key value -> Balanced
-balance (Leaf _)                 = Centered
+balance (Leaf _ _)               = Centered
 balance node@(Node _ left right) =
     case (- (height left)) + height right of
         -1 -> LeftHeavy
@@ -70,7 +70,7 @@ balance node@(Node _ left right) =
         n  -> balanceInvalid n left right
 
 balanceAfterOp :: Tree key value -> Balance
-balanceAfterOp (Leaf _)                 = Balanced Centered
+balanceAfterOp (Leaf _ _)               = Balanced Centered
 balanceAfterOp node@(Node _ left right) =
     case (- (height left)) + height right of
         -2 -> Unbalanced NeedLeftBalance
@@ -81,7 +81,7 @@ balanceAfterOp node@(Node _ left right) =
         n  -> balanceInvalid n left right
 
 balanceN :: Tree key value -> Int
-balanceN (Leaf _)            = 0
+balanceN (Leaf _ _)          = 0
 balanceN (Node _ left right) = (- (height left)) + height right
 
 assert opName prev n
@@ -102,8 +102,8 @@ check n@(Node k left right) = go [] [] n
     go leftStack rightStack n@(Node k left right)
         | not (isBalanced n) = ["node is not balanced: " ++ show k ++ " " ++ " left=" ++ show (height left) ++ " right=" ++ show (height right) ++ " balance=" ++ show (balanceN n)]
         | otherwise          = go (k:leftStack) rightStack left ++ go leftStack (k:rightStack) right
-    go _ _ (Leaf (LeafVal lk _)) = []
-    go _ _ (Leaf _ )             = []
+    go _ _ (Leaf (LeafVal lk _) _) = []
+    go _ _ (Leaf _ _)             = []
 
 labelTree :: forall key value . (Keyable key, Valueable value) => Tree key value -> Label
 labelTree n@(Node _ left right) =
@@ -112,19 +112,19 @@ labelTree n@(Node _ left right) =
         balanceToW8 1    = 1
      in hashFinalize $ flip hashUpdates     [labelTree left, labelTree right]
                      $ hashUpdates hashInit [B.singleton 1, B.singleton (balanceToW8 $ balanceN n)]
-labelTree leaf@(Leaf LeafSentinel) =
+labelTree leaf@(Leaf LeafSentinel nextKey) =
     -- TODO
     -- scrypto has the key length filled with 0 and the value length filled
     -- with 0 for the negative infinity sentinel, however this force to have a
     -- constant key & value length. see if we could alleviate this requirement.
     -- For now we hash an impossible prefix as an alternative
-    hashFinalize $ flip hashUpdate (leafNextKey leaf)
+    hashFinalize $ flip hashUpdate nextKey
                  $ flip hashUpdate (valueNegativeInfinity (Proxy :: Proxy value))
                  $ flip hashUpdate (keyNegativeInfinity (Proxy :: Proxy key))
                  $ flip hashUpdate (B.singleton 0)
                  $ hashInit
-labelTree leaf@(Leaf (LeafVal key value)) =
-    hashFinalize $ flip hashUpdate (leafNextKey leaf)
+labelTree leaf@(Leaf (LeafVal key value) nextKey) =
+    hashFinalize $ flip hashUpdate nextKey
                  $ flip hashUpdate value
                  $ flip hashUpdate key
                  $ flip hashUpdate (B.singleton 0)
@@ -133,10 +133,10 @@ labelTree leaf@(Leaf (LeafVal key value)) =
 -- | Return the next key associated with a leaf
 --
 -- TODO: this is not the leaf next key
-leafNextKey :: forall key val . Keyable key => Tree key val -> key
-leafNextKey (Leaf (LeafVal key value)) = key
-leafNextKey (Leaf LeafSentinel)        = keyNegativeInfinity (Proxy :: Proxy key)
-leafNextKey (Node {}) = error "cannot call on node"
+--leafNextKey :: forall key val . Keyable key => Tree key val -> key
+--leafNextKey (Leaf (LeafVal key value)) = key
+--leafNextKey (Leaf LeafSentinel)        = keyNegativeInfinity (Proxy :: Proxy key)
+--leafNextKey (Node {}) = error "cannot call on node"
 
 compareLeaf :: Ord key => Leaf key value -> Leaf key value -> Ordering
 compareLeaf LeafSentinel   LeafSentinel   = EQ
@@ -152,8 +152,8 @@ fromList kvs =
   where
     insertNoProof a b c = fst $ insert a b c
 
-empty :: Tree key value
-empty = Leaf LeafSentinel
+empty :: forall key value . Keyable key => Tree key value
+empty = Leaf LeafSentinel (keyPositiveInfinity (Proxy :: Proxy key))
 
 traverse :: (key -> acc -> acc)
          -> (key -> acc -> acc)
@@ -164,8 +164,8 @@ traverse :: (key -> acc -> acc)
          -> acc
 traverse pre current post leaf initAcc n = go initAcc n
   where
-    go acc (Leaf LeafSentinel)    = leaf Nothing acc
-    go acc (Leaf (LeafVal k v))   = leaf (Just (k,v)) acc
+    go acc (Leaf LeafSentinel _)  = leaf Nothing acc
+    go acc (Leaf (LeafVal k v) _) = leaf (Just (k,v)) acc
     go acc (Node iKey left right) =
         let acc1 = pre iKey acc
             acc2 = go acc1 left
@@ -183,8 +183,8 @@ traverseM :: Monad m
           -> m acc
 traverseM pre current post leaf initAcc n = go initAcc n
   where
-    go acc (Leaf LeafSentinel)    = leaf Nothing acc
-    go acc (Leaf (LeafVal k v))   = leaf (Just (k,v)) acc
+    go acc (Leaf LeafSentinel _)    = leaf Nothing acc
+    go acc (Leaf (LeafVal k v) _)   = leaf (Just (k,v)) acc
     go acc (Node iKey left right) = do
         acc1 <- pre iKey acc
         acc2 <- go acc1 left
@@ -205,8 +205,8 @@ showPretty n = go 0 n
         go (lvl + 2) left ++
         indent (lvl+1) ++  "+ " ++ "\n" ++
         go (lvl + 2) right
-    go lvl (Leaf LeafSentinel) = indent lvl ++ ("Leaf -∞") ++ "\n"
-    go lvl (Leaf (LeafVal k v)) = indent lvl ++ ("Leaf " ++ show k ++ " = " ++ show v) ++ "\n"
+    go lvl (Leaf LeafSentinel _) = indent lvl ++ ("Leaf -∞") ++ "\n"
+    go lvl (Leaf (LeafVal k v) _) = indent lvl ++ ("Leaf " ++ show k ++ " = " ++ show v) ++ "\n"
 
     indent lvl = concat (replicate lvl "  ")
 
@@ -219,8 +219,8 @@ debugPretty n = go 0 n
         go (lvl + 2) left
         indent (lvl+1) >> putStrLn "+ "
         go (lvl + 2) right
-    go lvl (Leaf LeafSentinel) = indent lvl >> putStrLn ("Leaf -∞")
-    go lvl (Leaf (LeafVal k v)) = indent lvl >> putStrLn ("Leaf " ++ show k ++ " = " ++ show v)
+    go lvl (Leaf LeafSentinel _) = indent lvl >> putStrLn ("Leaf -∞")
+    go lvl (Leaf (LeafVal k v) _) = indent lvl >> putStrLn ("Leaf " ++ show k ++ " = " ++ show v)
 
     indent lvl = putStr $ concat (replicate lvl "  ")
 
@@ -244,26 +244,30 @@ alter updatef k tree =
   where
     --go :: forall key val . Tree key val -> Maybe (Tree key val, NodeDiff)
     -- didn't find the key and reached the sentinel
-    go leafSentinel@(Leaf LeafSentinel) =
+    go leafSentinel@(Leaf LeafSentinel nextKey) =
         case updatef Nothing of
             Nothing -> Nothing
             Just v  ->
-                let proof = ProofLeaf (LeafNotFound $ keyNegativeInfinity (Proxy :: Proxy key)) (leafNextKey leafSentinel) v
-                 in Just (Node k leafSentinel (Leaf $ LeafVal k v), Inserted, proof)
+                let proof       = ProofLeaf (LeafNotFound $ keyNegativeInfinity (Proxy :: Proxy key)) nextKey v
+                    newLeaf     = Leaf (LeafVal k v) nextKey
+                    newSentinel = Leaf LeafSentinel k
+                 in Just (Node k newSentinel newLeaf, Inserted, proof)
     -- find a leaf
-    go leaf@(Leaf leafVal@(LeafVal lk lv)) =
+    go leaf@(Leaf leafVal@(LeafVal lk lv) nextKey) =
         case compare k lk of
             EQ -> case updatef (Just lv) of
                         Nothing     -> error "delete not supported"
                         Just newVal ->
-                            let proof = ProofLeaf LeafFound (leafNextKey leaf) newVal
-                             in Just (Leaf $ LeafVal k newVal, Updated, proof)
+                            let proof = ProofLeaf LeafFound nextKey newVal
+                             in Just (Leaf (LeafVal k newVal) nextKey, Updated, proof)
             LT -> error "lt impossible"
             GT -> case updatef Nothing of
                         Nothing     -> Nothing
                         Just newVal ->
-                            let proof = ProofLeaf (LeafNotFound lk) (leafNextKey leaf) newVal
-                             in Just (Node k (Leaf leafVal) (Leaf $ LeafVal k newVal), Inserted, proof)
+                            let proof    = ProofLeaf (LeafNotFound lk) nextKey newVal
+                                newLeaf  = Leaf (LeafVal k newVal) nextKey
+                                prevLeaf = Leaf leafVal k
+                             in Just (Node k prevLeaf newLeaf, Inserted, proof)
 
     go n@(Node key left right)
         | ceq == LT =
@@ -344,21 +348,21 @@ getMinRight = onRight Nothing getMin
 
 -- | Apply a function on the left node. if there's no node, then @def@ is used
 onLeft :: a -> (Tree key val -> a) -> Tree key val -> a
-onLeft def f (Leaf _)        = def
+onLeft def f (Leaf _ _)      = def
 onLeft _   f (Node _ left _) = f left
 
 -- | Apply a function on the right node. if there's no node, then @def@ is used
 onRight :: a -> (Tree key val -> a) -> Tree key val -> a
-onRight def f (Leaf _)         = def
+onRight def f (Leaf _ _)       = def
 onRight _   f (Node _ _ right) = f right
 
 -- | Return the minimal key in the tree.
 --
 -- go left until finding a leaf, if we hit the sentinel returns 'Nothing'
 getMin :: Tree key val -> Maybe key
-getMin (Leaf LeafSentinel)    = Nothing
-getMin (Leaf (LeafVal key _)) = Just key
-getMin (Node _ left _)        = getMin left
+getMin (Leaf LeafSentinel _)    = Nothing
+getMin (Leaf (LeafVal key _) _) = Just key
+getMin (Node _ left _)          = getMin left
 
 -- | Just like 'getMin' but instead assume there's a valid key
 getMinAssert :: Tree key val -> key
