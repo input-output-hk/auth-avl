@@ -12,6 +12,7 @@ module Crypto.AuthDS.Tree
     , delete
     , update
     -- * Helper
+    , toList
     , fromList
     -- * Test
     , check
@@ -49,11 +50,17 @@ height :: Tree key value -> Int
 height (Node _ left right) = 1 + max (height left) (height right)
 height (Leaf _ _)          = 0
 
-balanceInvalid n left right =
-    error ("internal error: AVL assumption invalid -- balance is " ++ show n
+balanceInvalid :: String -> Int -> Tree key value -> Tree key value -> a
+balanceInvalid operation n left right =
+    error ("internal error: AVL assumption invalid during " ++ operation ++ " -- balance is " ++ show n
           ++ " (height(left)=" ++ show (height left)
           ++ " height(right)=" ++ show (height right)
           ++ ")")
+
+assert operation _ n
+    | balanceN n `elem` [-1,0,1] = n
+    | otherwise                  =
+        error ("internal error: AVL assumption invalid. except")
 
 -- | Return the balance property of a node.
 --
@@ -67,7 +74,7 @@ balance node@(Node _ left right) =
         -1 -> LeftHeavy
         0  -> Centered
         1  -> RightHeavy
-        n  -> balanceInvalid n left right
+        n  -> balanceInvalid "balance" n left right
 
 balanceAfterOp :: Tree key value -> Balance
 balanceAfterOp (Leaf _ _)               = Balanced Centered
@@ -78,16 +85,11 @@ balanceAfterOp node@(Node _ left right) =
         0  -> Balanced Centered
         1  -> Balanced RightHeavy
         2  -> Unbalanced NeedRightBalance
-        n  -> balanceInvalid n left right
+        n  -> balanceInvalid "balance-after-op" n left right
 
 balanceN :: Tree key value -> Int
 balanceN (Leaf _ _)          = 0
 balanceN (Node _ left right) = (- (height left)) + height right
-
-assert opName prev n
-    | balanceN n `elem` [-1,0,1] = n
-    | otherwise                  =
-        error (opName ++ "\n" ++ showPretty prev ++ "\n" ++ showPretty n)
 
 -- | Check if a tree is balanced
 isBalanced :: (Show key, Show value) => Tree key value -> Bool
@@ -130,21 +132,13 @@ labelTree leaf@(Leaf (LeafVal key value) nextKey) =
                  $ flip hashUpdate (B.singleton 0)
                  $ hashInit
 
--- | Return the next key associated with a leaf
---
--- TODO: this is not the leaf next key
---leafNextKey :: forall key val . Keyable key => Tree key val -> key
---leafNextKey (Leaf (LeafVal key value)) = key
---leafNextKey (Leaf LeafSentinel)        = keyNegativeInfinity (Proxy :: Proxy key)
---leafNextKey (Node {}) = error "cannot call on node"
-
 compareLeaf :: Ord key => Leaf key value -> Leaf key value -> Ordering
 compareLeaf LeafSentinel   LeafSentinel   = EQ
 compareLeaf LeafSentinel   _              = LT
 compareLeaf _              LeafSentinel   = GT
 compareLeaf (LeafVal k1 _) (LeafVal k2 _) = k1 `compare` k2
 
-fromList :: (Show key, Show value, Keyable key, Valueable value)
+fromList :: (Keyable key, Valueable value)
          => [(key, value)]
          -> Tree key value
 fromList kvs =
@@ -232,7 +226,7 @@ insert k v = alter (const $ Just v) k
 delete k = alter (const Nothing) k
 update updater k = alter (maybe Nothing updater) k
 
-alter :: (Ord key, Show key, Show val, Keyable key, Valueable val)
+alter :: (Ord key, Keyable key, Valueable val)
       => (Maybe val -> Maybe val) -- the update function
       -> key                      -- the key to alter
       -> Tree key val             -- the old tree
@@ -287,7 +281,7 @@ alter updatef k tree =
         ceq = compare k key
 
 -- | Potentially rebalance a tree to keep the AVL properties
-rebalance :: (Show key, Show val) => Tree key val -> Tree key val
+rebalance :: Tree key val -> Tree key val
 rebalance n@(Node _ left right) =
     case balanceAfterOp n of
         Unbalanced NeedLeftBalance  -> case balance left of
@@ -306,7 +300,7 @@ rebalance n@(Node _ left right) =
 --       /  \        /  \
 --      b    c      a    b
 --
-rotL :: (Show key, Show val) => Tree key val -> Tree key val
+rotL :: Tree key val -> Tree key val
 rotL n@(Node _ a (Node _ b c)) = assert "rotL" n $ Node (getMinAssert c) (Node (getMinAssert b) a b) c
 rotL l                         = l
 
@@ -318,15 +312,15 @@ rotL l                         = l
 --   /  \            /  \
 --  a    b          b    c
 --
-rotR :: (Show key, Show val) => Tree key val -> Tree key val
+rotR :: Tree key val -> Tree key val
 rotR n@(Node _ (Node _ a b) c) = assert "rotR" n $ Node (getMinAssert b) a (Node (getMinAssert c) b c)
 rotR l                         = l
 
-irotR :: (Show key, Show val) => Tree key val -> Tree key val
+irotR :: Tree key val -> Tree key val
 irotR n@(Node _ (Node _ a b) c) = Node (getMinAssert b) a (Node (getMinAssert c) b c)
-irotR l                         = error ("invalid irotR: " ++ show l)
+irotR l                         = l
 
-irotL :: (Show key, Show val) => Tree key val -> Tree key val
+irotL :: Tree key val -> Tree key val
 irotL n@(Node _ a (Node _ b c)) = Node (getMinAssert c) (Node (getMinAssert b) a b) c
 irotL l                         = l
 
@@ -334,13 +328,13 @@ irotL l                         = l
 -- | Right Left rotation
 --
 -- right rotation of right subtree followed by left rotation of the tree
-rotRL :: (Show key, Show val) => Tree key val -> Tree key val
+rotRL :: Tree key val -> Tree key val
 rotRL n@(Node k left right) = assert "rotRL" n $ irotL $ Node k left (irotR right)
 
 -- | Left right rotation
 --
 -- left rotation of left subtree followed by right rotation of the tree
-rotLR :: (Show key, Show val) => Tree key val -> Tree key val
+rotLR :: Tree key val -> Tree key val
 rotLR n@(Node k left right) = assert "rotLR" n $ irotR $ Node k (irotL left) right
 
 getMinRight :: Tree key val -> Maybe key
