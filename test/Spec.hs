@@ -38,5 +38,8 @@ avlTest = testProperty "AVL" $ \(TreeKvs kvs) ->
 
 main :: IO ()
 main = defaultMain $ testGroup "authds"
-    [ avlTest
+    [ testProperty "fromTo" $ \(TreeKvs kvs) ->
+        let t = fromList kvs
+         in toList t === sortBy (compare `on` fst) kvs
+    , avlTest
     ]

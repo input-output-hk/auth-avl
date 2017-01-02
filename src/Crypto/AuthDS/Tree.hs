@@ -146,6 +146,22 @@ fromList kvs =
   where
     insertNoProof a b c = fst $ insert a b c
 
+toList :: Tree key value -> [(key, value)]
+toList node = go [] node
+  where
+    go :: [Tree key value] -> Tree key value -> [(key, value)]
+    go acc (Node _ left right)    = go (right:acc) left
+    go acc (Leaf (LeafVal k v) _) = (k,v):dive acc
+    go acc (Leaf LeafSentinel _)  = dive acc
+
+    dive :: [Tree key value] -> [(key, value)]
+    dive []                            = []
+    dive ((Node _ left right):acc)     = go (right:acc) left
+    dive ((Leaf LeafSentinel _):[])    = []
+    dive ((Leaf (LeafVal k v) _):[])   = [(k,v)]
+    dive ((Leaf LeafSentinel _):x:xs)  = go xs x
+    dive ((Leaf (LeafVal k v) _):x:xs) = (k,v):go xs x
+
 empty :: forall key value . Keyable key => Tree key value
 empty = Leaf LeafSentinel (keyPositiveInfinity (Proxy :: Proxy key))
 
