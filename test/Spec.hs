@@ -3,6 +3,7 @@ import Test.Tasty.QuickCheck
 import Data.List
 import Data.Function
 import Control.Monad
+import qualified Data.Foldable as Foldable
 
 import           Data.ByteArray (ByteArrayAccess(..))
 import qualified Data.ByteString as B
@@ -22,24 +23,29 @@ instance Valueable Int where
 instance Keyable Int where
     keyNegativeInfinity _ = 0
     keyPositiveInfinity _ = maxBound
-    
 
 instance Arbitrary TreeKvs where
     arbitrary = do
         n <- choose (1,1024)
-        TreeKvs . undup <$> replicateM n ((,) <$> chooseKey <*> arbitrary)
+        TreeKvs . undup <$> replicateM n ((,) <$> chooseKey <*> chooseValue)
       where
         undup = nubBy ((==) `on` fst)
         chooseKey = choose (0, 500)
+        chooseValue = choose (0,1000)
 
 avlTest = testProperty "AVL" $ \(TreeKvs kvs) ->
     let t = fromList kvs
      in check t === []
 
+sortList = sortBy (compare `on` fst)
+
 main :: IO ()
 main = defaultMain $ testGroup "authds"
     [ testProperty "fromTo" $ \(TreeKvs kvs) ->
         let t = fromList kvs
-         in toList t === sortBy (compare `on` fst) kvs
+         in toList t === sortList kvs
+    , testProperty "length" $ \(TreeKvs kvs) -> Foldable.length kvs === Foldable.length (fromList kvs)
+    , testProperty "foldMap" $ \(TreeKvs kvs) -> Foldable.foldMap (show) (map snd $ sortList kvs) === Foldable.foldMap (show) (fromList kvs)
+    , testProperty "foldl" $ \(TreeKvs kvs) -> Foldable.foldl (+) 1 (map snd kvs) === Foldable.foldl (+) 1 (fromList kvs)
     , avlTest
     ]

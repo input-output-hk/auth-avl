@@ -23,6 +23,7 @@ import Crypto.AuthDS.Proof
 import Crypto.AuthDS.Types
 import Crypto.Hash
 import Data.Proxy
+import qualified Data.Foldable
 import Data.ByteArray (ByteArrayAccess)
 import qualified Data.ByteString as B
 
@@ -38,12 +39,19 @@ data Leaf key value =
       LeafVal key value
     | LeafSentinel      -- minus infinity key. sentinel node
     deriving (Show,Eq)
-
 class (Ord key, ByteArrayAccess key) => Keyable key where
     keyNegativeInfinity :: proxy key -> key
     keyPositiveInfinity :: proxy key -> key
 class ByteArrayAccess value => Valueable value where
     valueNegativeInfinity :: proxy value -> value
+
+instance Foldable (Tree key) where
+    foldMap = tFoldMap
+
+tFoldMap :: Monoid m => (value -> m) -> Tree key value -> m
+tFoldMap f (Leaf LeafSentinel _)  = mempty
+tFoldMap f (Leaf (LeafVal k v) _) = f v
+tFoldMap f (Node _ left right)    = tFoldMap f left `mappend` tFoldMap f right
 
 -- | return the height of a tree
 height :: Tree key value -> Int
