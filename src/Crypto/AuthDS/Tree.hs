@@ -6,6 +6,8 @@ module Crypto.AuthDS.Tree
     , Valueable(..)
     -- * Create
     , empty
+    -- * Hashing
+    , labelTree
     -- * Manipulate
     , alter
     , insert
