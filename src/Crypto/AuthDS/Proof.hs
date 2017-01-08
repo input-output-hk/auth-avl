@@ -22,8 +22,6 @@ data Element key value =
     | ProofLeaf    (LeafFound key) (NextLeafKey key) value
     deriving (Show,Eq)
 
-type UpdateFunction val = Maybe val -> Maybe val
-
 data ModifyProof key value = ModifyProof
     { modifyKey     :: key
     , modifyElement :: Element key value
