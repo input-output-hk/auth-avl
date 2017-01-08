@@ -237,17 +237,17 @@ showPretty n = go 0 n
 
     indent lvl = concat (replicate lvl "  ")
 
-debugPretty :: (Show key, Show val) => Tree key val -> IO ()
+debugPretty :: (Show key, Show val, Keyable key, Valueable val) => Tree key val -> IO ()
 debugPretty n = go 0 n
   where
     go lvl node@(Node key left right) = do
-        indent lvl >> putStrLn ("- Node " ++ show key ++ " (height= " ++ show (height node) ++ " balance=" ++ show (balanceN node) ++ ")")
+        indent lvl >> putStrLn ("- Node " ++ show key ++ " (height= " ++ show (height node) ++ " balance=" ++ show (balanceN node) ++ " label=" ++ show (labelTree node))
         indent (lvl+1) >> putStrLn "+ "
         go (lvl + 2) left
         indent (lvl+1) >> putStrLn "+ "
         go (lvl + 2) right
-    go lvl (Leaf LeafSentinel _) = indent lvl >> putStrLn ("Leaf -∞")
-    go lvl (Leaf (LeafVal k v) _) = indent lvl >> putStrLn ("Leaf " ++ show k ++ " = " ++ show v)
+    go lvl lf@(Leaf LeafSentinel _) = indent lvl >> putStrLn ("Leaf -∞ " ++ show (labelTree lf))
+    go lvl lf@(Leaf (LeafVal k v) _) = indent lvl >> putStrLn ("Leaf " ++ show k ++ " = " ++ show v ++ " " ++ show (labelTree lf))
 
     indent lvl = putStr $ concat (replicate lvl "  ")
 
