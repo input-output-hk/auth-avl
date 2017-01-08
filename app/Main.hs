@@ -12,7 +12,9 @@ debug t = do
 
 instance ByteArrayAccess Int where
     length _ = 8
-    withByteArray i f = undefined
+    withByteArray i f =
+        withByteArray (B.pack [0,0,0,0,0,0,fromIntegral hi, fromIntegral lo]) f
+      where (hi, lo) = i `divMod` 256
 
 instance Valueable Int where
     valueNegativeInfinity _ = minBound
