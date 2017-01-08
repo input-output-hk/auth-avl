@@ -12,7 +12,6 @@ data LeafFound key = LeafFound
                    deriving (Show,Eq)
 
 -- Just simple aliases for code documentation purpose
-type RootHash = Label
 type NextLeafKey key = key
 
 -- | Element of proof defined recursively to represent the tree search recursion
@@ -25,10 +24,4 @@ data Element key value =
 data ModifyProof key value = ModifyProof
     { modifyKey     :: key
     , modifyElement :: Element key value
-    }
-
-verify :: RootHash              -- ^ the original digest
-       -> UpdateFunction value  -- ^ the updating value function
-       -> ModifyProof key value -- ^ proof of update validity
-       -> Maybe (RootHash)      -- ^ the new digest if the proof validate
-verify _ _ _ = Nothing
+    } deriving (Show,Eq)

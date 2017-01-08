@@ -15,7 +15,8 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Crypto.AuthDS.Tree
+  exposed-modules:     Crypto.AuthDS
+                       Crypto.AuthDS.Tree
                        Crypto.AuthDS.Proof
   other-modules:       Crypto.AuthDS.Types
   build-depends:       base >= 4.7 && < 5
