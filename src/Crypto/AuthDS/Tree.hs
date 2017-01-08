@@ -112,7 +112,7 @@ isBalanced n =
         Unbalanced _ -> False
 
 check :: (Show key, Show value, Ord key) => Tree key value -> [String]
-check n@(Node k left right) = go [] [] n
+check n = go [] [] n
   where
     go leftStack rightStack n@(Node k left right)
         | not (isBalanced n) = ["node is not balanced: " ++ show k ++ " " ++ " left=" ++ show (height left) ++ " right=" ++ show (height right) ++ " balance=" ++ show (balanceN n)]
