@@ -7,6 +7,7 @@ module Crypto.AuthDS.Tree
     -- * Create
     , empty
     -- * Hashing
+    , labelTreeish
     , labelTree
     -- * Manipulate
     , alter
@@ -117,13 +118,19 @@ check n@(Node k left right) = go [] [] n
     go _ _ (Leaf (LeafVal lk _) _) = []
     go _ _ (Leaf _ _)             = []
 
+labelTreeish :: Balanced -> Label -> Label -> Label
+labelTreeish bal leftLabel rightLabel =
+    hashFinalize $ flip hashUpdates     [leftLabel, rightLabel]
+                 $ hashUpdates hashInit [B.singleton 1, B.singleton (balanceToW8 bal)]
+  where
+
+    balanceToW8 :: Balanced -> Word8
+    balanceToW8 LeftHeavy  = 255
+    balanceToW8 Centered   = 0
+    balanceToW8 RightHeavy = 1
+
 labelTree :: forall key value . (Keyable key, Valueable value) => Tree key value -> Label
-labelTree n@(Node _ left right) =
-    let balanceToW8 (-1) = 255
-        balanceToW8 0    = 0
-        balanceToW8 1    = 1
-     in hashFinalize $ flip hashUpdates     [labelTree left, labelTree right]
-                     $ hashUpdates hashInit [B.singleton 1, B.singleton (balanceToW8 $ balanceN n)]
+labelTree n@(Node _ left right) = labelTreeish (balance n) (labelTree left) (labelTree right)
 labelTree leaf@(Leaf LeafSentinel nextKey) =
     -- TODO
     -- scrypto has the key length filled with 0 and the value length filled
