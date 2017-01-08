@@ -301,14 +301,14 @@ alter updatef k tree =
             case go left of
                 Nothing          -> Nothing
                 Just (nLeft,s,p) ->
-                    let proof = ProofGoLeft (labelTree n) (balance n) p
+                    let proof = ProofGoLeft (labelTree right) (balance n) p
                      in Just (rebalance (Node key nLeft right), s, proof)
         -- go right
         | otherwise =
             case go right of
                 Nothing           -> Nothing
                 Just (nRight,s,p) ->
-                    let proof = ProofGoRight (labelTree n) (balance n) p
+                    let proof = ProofGoRight (labelTree left) (balance n) p
                      in Just (rebalance (Node key left nRight), s, proof)
       where
         ceq = compare k key
