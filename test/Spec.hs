@@ -8,9 +8,18 @@ import qualified Data.Foldable as Foldable
 import           Data.ByteArray (ByteArrayAccess(..))
 import qualified Data.ByteString as B
 
-import Crypto.AuthDS.Tree
+import Crypto.AuthDS.Tree (check)
+import qualified Crypto.AuthDS as AuthDS
 
 data TreeKvs = TreeKvs [(Int, Int)]
+    deriving (Show,Eq)
+
+-- | Same as TreeKvs but also add a new (key, value) where key doesn't exist
+data TreeKvsNew = TreeKvsNew TreeKvs (Int, Int)
+    deriving (Show,Eq)
+
+-- | Same as TreeKvs but also have an existing key with a different value
+data TreeKvsModify = TreeKvsModify TreeKvs (Int, Int)
     deriving (Show,Eq)
 
 instance ByteArrayAccess Int where
@@ -20,10 +29,10 @@ instance ByteArrayAccess Int where
         withByteArray (B.pack [0,0,0,0,0,0,fromIntegral hi, fromIntegral lo]) f
       where (hi, lo) = i `divMod` 256
 
-instance Valueable Int where
+instance AuthDS.Valueable Int where
     valueNegativeInfinity _ = minBound
 
-instance Keyable Int where
+instance AuthDS.Keyable Int where
     keyNegativeInfinity _ = 0
     keyPositiveInfinity _ = maxBound
 
@@ -37,9 +46,14 @@ instance Arbitrary TreeKvs where
       where
         undup = nubBy ((==) `on` fst)
 
+instance Arbitrary TreeKvsNew where
+    arbitrary = do
+        treekvs@(TreeKvs l) <- arbitrary
+        newK <- chooseKey `suchThat` (\k -> k `notElem` map fst l)
+        TreeKvsNew <$> pure treekvs <*> ((,) <$> pure newK <*> chooseValue)
 
 avlTest = testProperty "AVL" $ \(TreeKvs kvs) ->
-    let t = fromList kvs
+    let t = AuthDS.fromList kvs
      in check t === []
 
 sortList = sortBy (compare `on` fst)
@@ -47,10 +61,17 @@ sortList = sortBy (compare `on` fst)
 main :: IO ()
 main = defaultMain $ testGroup "authds"
     [ testProperty "fromTo" $ \(TreeKvs kvs) ->
-        let t = fromList kvs
-         in toList t === sortList kvs
-    , testProperty "length" $ \(TreeKvs kvs) -> Foldable.length kvs === Foldable.length (fromList kvs)
-    , testProperty "foldMap" $ \(TreeKvs kvs) -> Foldable.foldMap (show) (map snd $ sortList kvs) === Foldable.foldMap (show) (fromList kvs)
-    , testProperty "foldl" $ \(TreeKvs kvs) -> Foldable.foldl (+) 1 (map snd kvs) === Foldable.foldl (+) 1 (fromList kvs)
+        let t = AuthDS.fromList kvs
+         in AuthDS.toList t === sortList kvs
+    , testProperty "length" $ \(TreeKvs kvs) -> Foldable.length kvs === Foldable.length (AuthDS.fromList kvs)
+    , testProperty "foldMap" $ \(TreeKvs kvs) -> Foldable.foldMap (show) (map snd $ sortList kvs) === Foldable.foldMap (show) (AuthDS.fromList kvs)
+    , testProperty "foldl" $ \(TreeKvs kvs) -> Foldable.foldl (+) 1 (map snd kvs) === Foldable.foldl (+) 1 (AuthDS.fromList kvs)
     , avlTest
+    , testProperty "verify" $ \(TreeKvsNew (TreeKvs kvs) (newK, newV)) ->
+        let t = AuthDS.fromList kvs
+            d = AuthDS.labelTree t
+            (t', mproof) = AuthDS.insert newK newV t
+            d' = AuthDS.labelTree t'
+         --in maybe False (\vD -> d == d') $ AuthDS.verify d (const (Just newV)) mproof
+         in maybe False (\vD -> vD == d') $ AuthDS.verify d (const (Just newV)) mproof
     ]
