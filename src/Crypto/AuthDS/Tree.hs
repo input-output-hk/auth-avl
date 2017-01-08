@@ -252,8 +252,6 @@ debugPretty n = go 0 n
     indent lvl = putStr $ concat (replicate lvl "  ")
 
 data NodeDiff = Deleted | Updated | Inserted
-data HeightInc = HeightIncreated | HeightNotIncreased
-    deriving (Show,Eq)
 
 insert k v = alter (const $ Just v) k
 delete k = alter (const Nothing) k
