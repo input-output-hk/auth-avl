@@ -24,14 +24,16 @@ instance Keyable Int where
     keyNegativeInfinity _ = 0
     keyPositiveInfinity _ = maxBound
 
+chooseKey = choose (0, 500)
+chooseValue = choose (0,1000)
+
 instance Arbitrary TreeKvs where
     arbitrary = do
-        n <- choose (1,1024)
+        n <- choose (1,1000)
         TreeKvs . undup <$> replicateM n ((,) <$> chooseKey <*> chooseValue)
       where
         undup = nubBy ((==) `on` fst)
-        chooseKey = choose (0, 500)
-        chooseValue = choose (0,1000)
+
 
 avlTest = testProperty "AVL" $ \(TreeKvs kvs) ->
     let t = fromList kvs
