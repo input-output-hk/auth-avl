@@ -273,7 +273,9 @@ alter updatef k tree =
         case updatef Nothing of
             Nothing -> Nothing
             Just v  ->
-                let proof       = ProofLeaf (LeafNotFound $ keyNegativeInfinity (Proxy :: Proxy key)) nextKey v
+                let proof       = ProofLeaf (LeafNotFound $ keyNegativeInfinity (Proxy :: Proxy key))
+                                            nextKey
+                                            (valueNegativeInfinity (Proxy :: Proxy val))
                     newLeaf     = Leaf (LeafVal k v) nextKey
                     newSentinel = Leaf LeafSentinel k
                  in Just (Node k newSentinel newLeaf, Inserted, proof)
@@ -289,7 +291,7 @@ alter updatef k tree =
             GT -> case updatef Nothing of
                         Nothing     -> Nothing
                         Just newVal ->
-                            let proof    = ProofLeaf (LeafNotFound lk) nextKey newVal
+                            let proof    = ProofLeaf (LeafNotFound lk) nextKey lv
                                 newLeaf  = Leaf (LeafVal k newVal) nextKey
                                 prevLeaf = Leaf leafVal k
                              in Just (Node k prevLeaf newLeaf, Inserted, proof)
