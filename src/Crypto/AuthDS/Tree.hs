@@ -1,7 +1,8 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Crypto.AuthDS.Tree
-    ( Tree
+    ( Tree(..)
+    , Leaf(..)
     , Keyable(..)
     , Valueable(..)
     -- * Create
@@ -26,6 +27,7 @@ import Crypto.AuthDS.Proof
 import Crypto.AuthDS.Types
 import Crypto.Hash
 import Data.Proxy
+import Data.Word (Word8)
 import qualified Data.Foldable
 import Data.ByteArray (ByteArrayAccess)
 import qualified Data.ByteString as B
