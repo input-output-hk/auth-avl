@@ -258,9 +258,9 @@ delete k = alter (const Nothing) k
 update updater k = alter (maybe Nothing updater) k
 
 alter :: (Ord key, Keyable key, Valueable val)
-      => (Maybe val -> Maybe val) -- the update function
-      -> key                      -- the key to alter
-      -> Tree key val             -- the old tree
+      => UpdateFunction val -- the value update function
+      -> key                -- the key to alter
+      -> Tree key val       -- the old tree
       -> (Tree key val, ModifyProof key val) -- the new tree
 alter updatef k tree =
     case go tree of

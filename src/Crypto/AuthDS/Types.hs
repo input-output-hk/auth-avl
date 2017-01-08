@@ -5,6 +5,7 @@ module Crypto.AuthDS.Types
     , Balanced(..)
     , Unbalanced(..)
     , Direction(..)
+    , UpdateFunction
     ) where
 
 import Crypto.Hash (Blake2b_512, Digest)
@@ -24,3 +25,5 @@ data Unbalanced = NeedLeftBalance | NeedRightBalance
 
 data Direction = Left | Right
     deriving (Show,Eq)
+
+type UpdateFunction val = Maybe val -> Maybe val
